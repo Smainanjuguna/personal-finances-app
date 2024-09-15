@@ -1,0 +1,170 @@
+# Load required packages
+library(shiny)
+library(ggplot2)
+library(tidyr)  # Use tidyr for reshaping data
+
+# Define UI for the monthly expense calculator app
+ui <- fluidPage(
+  
+  # App title
+  titlePanel("Monthly Expense Calculator--maina@maps"),
+  
+  # Sidebar layout with input and output definitions
+  sidebarLayout(
+    
+    # Sidebar panel for inputs
+    sidebarPanel(
+      
+      # Input fields for income and other expenses
+      numericInput("income", "Income:", value = 2000, min = 0),
+      
+      numericInput("rent", "Rent:", value = 1000, min = 0),
+      numericInput("utilities", "Utilities:", value = 150, min = 0),
+      numericInput("groceries", "Groceries:", value = 300, min = 0),
+      numericInput("transportation", "Transportation:", value = 100, min = 0),
+      numericInput("entertainment", "Entertainment:", value = 100, min = 0),
+      numericInput("wifi", "WiFi:", value = 50, min = 0),
+      numericInput("family_support", "Family Support:", value = 200, min = 0),
+      numericInput("loan_repayment", "Loan Repayment:", value = 500, min = 0),
+      numericInput("other", "Other Expenses:", value = 50, min = 0),
+      
+      # Input field for selecting the month
+      selectInput("month", "Select Month:", choices = month.name, selected = NULL),
+      
+      # Button to view the graph for the selected month
+      actionButton("view_graph", "View Graph"),
+      
+      # Display total expenses and income
+      h4("Total Expenses for this month:"),
+      verbatimTextOutput("total_expenses"),
+      h4("Total Savings for this month:"),
+      verbatimTextOutput("total_savings")
+    ),
+    
+    # Main panel for displaying outputs
+    mainPanel(
+      h3("Monthly Expenses and Income by Category"),
+      plotOutput("bar_plot"),  # Main bar plot for expenses
+      
+      # Additional bar plot for income, total expenses, and total savings
+      h3("Income, Total Expenses, and Total Savings"),
+      plotOutput("summary_bar_plot")  # Summary bar plot
+    )
+  )
+)
+
+# Define server logic
+server <- function(input, output, session) {
+  
+  # Reactive data to store expenses and income over time
+  expenses_data <- reactiveVal(data.frame(
+    month = character(),
+    rent = numeric(),
+    utilities = numeric(),
+    groceries = numeric(),
+    transportation = numeric(),
+    entertainment = numeric(),
+    wifi = numeric(),
+    family_support = numeric(),
+    loan_repayment = numeric(),
+    other = numeric(),
+    income = numeric(),
+    stringsAsFactors = FALSE
+  ))
+  
+  # Calculate total expenses for the current input
+  current_total_expenses <- reactive({
+    input$rent + input$utilities + input$groceries + 
+      input$transportation + input$entertainment + input$wifi + 
+      input$family_support + input$loan_repayment + input$other
+  })
+  
+  # Calculate savings for the current input
+  current_savings <- reactive({
+    input$income - current_total_expenses()
+  })
+  
+  # Display the current total expenses
+  output$total_expenses <- renderText({
+    paste("$", current_total_expenses())
+  })
+  
+  # Display the current savings
+  output$total_savings <- renderText({
+    paste("$", current_savings())
+  })
+  
+  # Add expenses and income when button is clicked
+  observeEvent(input$view_graph, {
+    # Ensure the user has selected a month
+    if (is.null(input$month)) {
+      showNotification("Please select a month.", type = "error")
+      return()
+    }
+    
+    # Add the new expenses and income to the data
+    new_data <- data.frame(
+      month = input$month,
+      rent = input$rent,
+      utilities = input$utilities,
+      groceries = input$groceries,
+      transportation = input$transportation,
+      entertainment = input$entertainment,
+      wifi = input$wifi,
+      family_support = input$family_support,
+      loan_repayment = input$loan_repayment,
+      other = input$other,
+      income = input$income,
+      stringsAsFactors = FALSE
+    )
+    
+    # Update the reactive data with the new entry
+    updated_expenses <- rbind(expenses_data(), new_data)
+    expenses_data(updated_expenses)
+    
+    # Clear the month input field after adding
+    updateSelectInput(session, "month", selected = NULL)
+  })
+  
+  # Plot expenses by category for the selected month as a bar graph
+  output$bar_plot <- renderPlot({
+    data <- expenses_data()
+    
+    # Only plot if there is data
+    if (nrow(data) > 0) {
+      # Filter data for the selected month
+      filtered_data <- subset(data, month == input$month)
+      
+      # Only plot if there is data for the selected month
+      if (nrow(filtered_data) > 0) {
+        # Reshape the data for grouped bar chart using pivot_longer
+        data_long <- pivot_longer(filtered_data, cols = -c(month, income), names_to = "category", values_to = "amount")
+        
+        ggplot(data_long, aes(x = month, y = amount, fill = category)) +
+          geom_bar(stat = "identity", position = "dodge") +
+          labs(x = "Month", y = "Amount ($)", fill = "Category", 
+               title = paste("Expenses and Income for", input$month)) +
+          theme_minimal() +
+          theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      }
+    }
+  })
+  
+  # Plot income, total expenses, and savings for the selected month
+  output$summary_bar_plot <- renderPlot({
+    # Create a summary data frame
+    summary_data <- data.frame(
+      category = c("Income", "Total Expenses", "Total Savings"),
+      amount = c(input$income, current_total_expenses(), current_savings())
+    )
+    
+    ggplot(summary_data, aes(x = category, y = amount, fill = category)) +
+      geom_bar(stat = "identity") +
+      labs(x = "Category", y = "Amount ($)", 
+           title = "Income, Total Expenses, and Total Savings") +
+      theme_minimal()
+  })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
